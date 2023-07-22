@@ -2,9 +2,9 @@ package event
 
 import (
 	"encoding/json"
-	//"github.com/fpinna/event-time-line/internal/entity"
 	"errors"
 	"github.com/google/uuid"
+	"io"
 	"net/http"
 	"time"
 )
@@ -44,22 +44,39 @@ func (ev *Event) Validate() error {
 	return nil
 }
 
-func (ev *Event) PushEvent(w http.ResponseWriter, r *http.Request) {
+func PushEvent(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-
-	event, _ := NewEvent(genId(), "name", "origin", "description")
-	err := event.Validate()
+	var e Event
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		_ = json.NewEncoder(w).Encode(err.Error())
+		// Handle the error (e.g., return an error response)
+		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(event)
 
+	err = json.Unmarshal(body, &e)
+	if err != nil {
+		// Handle the error (e.g., return an error response)
+		return
+	}
+	e.ID = genId()
+	e.Time = time.Now()
+
+	//event, _ := NewEvent(genId(), "name", "origin", "description")
+	err = e.Validate()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		//_ = json.NewEncoder(w).Encode(err.Error())
+	} else {
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(e)
+
+	}
 }
 
 func genId() string {
