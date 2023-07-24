@@ -1,92 +1,46 @@
 package main
 
 import (
-	"github.com/go-chi/chi/middleware"
-	"github.com/go-chi/chi/v5"
 	_ "github.com/mattn/go-sqlite3"
 	amqp "github.com/rabbitmq/amqp091-go"
-	"github/fpinna/event-time-line/internal/event"
 	"github/fpinna/event-time-line/pkg/rabbitmq"
+	"github/fpinna/event-time-line/pkg/router"
+	"log"
 	"net/http"
 )
 
+const (
+	queueName = "events"
+)
+
 func main() {
+	var err error
+
 	// RabbitMQ
-	ch, err := rabbitmq.OpenChannel()
+	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
-	defer ch.Close()
+	defer conn.Close()
 
-	_, err = ch.QueueDeclare(
-		"events",
-		false,
-		false,
-		false,
-		false,
-		nil,
-	)
+	messagingApp, err := rabbitmq.NewRabbitMQService(conn, queueName)
+	messagingService := rabbitmq.NewMessagingService(messagingApp)
 
-	//msgRabbitmqChannel := make(chan amqp.Delivery)
-	//err = rabbitmq.Publish(ch, amqp.Delivery{Body: []byte("hola")})
-	//if err != nil {
-	//	panic(err)
-	//}
+	r := router.SetupRouter(messagingService)
 
-	// New database
-	//dbf, err := sql.Open("sqlite3", "./events.db")
-	//if err != nil {
-	//	panic(err)
-	//}
-	//defer dbf.Close()
-	// New repository
-	//db.NewEventRepository(dbf)
-	// New router
-	router := chi.NewRouter()
-
-	// Middleware stack
-	router.Use(middleware.RequestID)
-	router.Use(middleware.RealIP)
-	router.Use(middleware.Logger)
-	router.Use(middleware.Recoverer)
-
-	router.Get("/status", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, err := w.Write([]byte("status"))
-		if err != nil {
-			return
+	// Consumer Test - RabbitMQ
+	receivedMessages, err := messagingService.ReceiveMessages(queueName)
+	go func() {
+		for d := range receivedMessages {
+			log.Printf("Received a message: %s", d.Body)
 		}
-	})
 
-	router.Route("/event", func(r chi.Router) {
+	}()
+	log.Printf(" [*] Waiting for messages. To exit press CTRL+C")
+	// End Consumer
 
-		r.Post("/push", event.PushEvent)
-		err = rabbitmq.PublishEvent(ch, amqp.Delivery{Body: []byte("hola")})
-		if err != nil {
-			panic(err)
-		}
-		//r.Post("/pull", func(w http.ResponseWriter, r *http.Request) {
-		//	w.Write([]byte("pull"))
-		//})
-	})
-
-	err = http.ListenAndServe(":8080", router)
-	if err != nil {
-		panic(err)
-	}
-
-}
-
-func rabbitmqProducer(ch *amqp.Channel, msg amqp.Delivery) {
-	err := ch.Publish(
-		"",
-		"events",
-		false,
-		false,
-		amqp.Publishing{
-			ContentType: "application/json",
-			Body:        msg.Body,
-		})
+	// Server start
+	err = http.ListenAndServe(":8080", r)
 	if err != nil {
 		panic(err)
 	}

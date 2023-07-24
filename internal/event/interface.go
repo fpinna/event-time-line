@@ -1,8 +1,9 @@
 package event
 
-type EventRepositoryInterface interface {
-	Save(event *Event) error
-	FindAll() ([]*Event, error)
-	PublishEvent(event *Event) error
-	PushEvent(event *Event) error
+import (
+	message "github/fpinna/event-time-line/pkg/rabbitmq"
+)
+
+type EventInterfaceMessage interface {
+	message.MessagingService
 }
